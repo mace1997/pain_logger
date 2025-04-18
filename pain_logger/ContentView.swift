@@ -24,6 +24,7 @@ enum PainLevel: Int, CaseIterable, Identifiable {
     }
 }
 
+
 struct TimeArcCircle: View {
     var color: Color
     var timeSlot: String
@@ -118,13 +119,42 @@ struct PainLoggerView: View {
     @State private var didTrainToday: Bool = false
     @State private var currentMonthOffset: Int = 0
     @State private var loggedPain: [Date: [String: PainLevel]] = [:]
+    @State private var exportedFileURL: URL?
+    @State private var showShareSheet = false
     
     let timeSlots = ["Morning", "Afternoon", "Night"]
+    
+    func exportCSV() {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+
+        var csvString = "Date,Morning,Afternoon,Night,Exercise\n"
+
+        let sortedDates = loggedPain.keys.sorted()
+        for date in sortedDates {
+            let dayLog = loggedPain[date] ?? [:]
+            let morning = dayLog["Morning"]?.rawValue ?? 0
+            let afternoon = dayLog["Afternoon"]?.rawValue ?? 0
+            let night = dayLog["Night"]?.rawValue ?? 0
+            let trained = Calendar.current.isDate(date, inSameDayAs: Date()) && didTrainToday ? 1 : 0
+            csvString += "\(formatter.string(from: date)),\(morning),\(afternoon),\(night),\(trained)\n"
+        }
+
+        let fileName = "PainLog.csv"
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+
+        do {
+            try csvString.write(to: path, atomically: true, encoding: .utf8)
+            exportedFileURL = path
+            showShareSheet = true
+        } catch {
+            print("Failed to write CSV: \(error)")
+        }
+    }
     
     var body: some View {
         NavigationView {
             ScrollView {
-                VStack(spacing: 10) {
                     Text("Log Pain")
                         .font(.largeTitle)
                         .bold()
@@ -135,6 +165,11 @@ struct PainLoggerView: View {
                             .fontWeight(.bold)
                     }
                     .padding(.horizontal)
+                    .sheet(isPresented: $showShareSheet) {
+                        if let url = exportedFileURL {
+                            ShareSheet(activityItems: [url])
+                        }
+                    }
 
                     VStack(alignment: .leading) {
                         Text("Time of Day")
@@ -168,6 +203,7 @@ struct PainLoggerView: View {
                                 .frame(width: 30, height: 30)
                             Text("You selected: \(selectedLevel.description)")
                         }
+
                     }
                     .padding(.horizontal)
 
@@ -275,24 +311,48 @@ struct PainLoggerView: View {
                     }
                     .padding(.horizontal)
                     .padding(.vertical, 4)
+                    
+                    Button(action: {
+                        exportCSV()
+                    }) {
+                        Text("Export CSV")
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.blue.opacity(0.2))
+                            .foregroundColor(.blue)
+                            .cornerRadius(8)
+                            .bold()
+                    }
+                    .padding(.horizontal)
                 }
             }
         }
-    }
-    
-    struct PainLoggerView_Previews: PreviewProvider {
-        static var previews: some View {
-            Group {
-                PainLoggerView()
-                    .previewDevice("iPhone 13 mini")
-                PainLoggerView()
-                    .previewLayout(.sizeThatFits)
-                    .previewDisplayName("Size That Fits")
-            }
+        
+}
+
+struct PainLoggerView_Previews: PreviewProvider {
+    static var previews: some View {
+        Group {
+            PainLoggerView()
+                .previewDevice("iPhone 13 mini")
+            PainLoggerView()
+                .previewLayout(.sizeThatFits)
+                .previewDisplayName("Size That Fits")
         }
     }
 }
 
 #Preview {
     PainLoggerView()
+}
+
+struct ShareSheet: UIViewControllerRepresentable {
+    var activityItems: [Any]
+    var applicationActivities: [UIActivity]? = nil
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: activityItems, applicationActivities: applicationActivities)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
