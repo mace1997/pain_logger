@@ -6,12 +6,13 @@
 //
 
 import SwiftUI
+import Foundation
 
 @main
 struct pain_loggerApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            PainLoggerView()
         }
     }
 }
