@@ -113,17 +113,51 @@ struct ArcSegment: Shape {
     }
 }
 
+extension Dictionary {
+    func compactMapKeys<T: Hashable>(_ transform: (Key) -> T?) -> [T: Value] {
+        var result: [T: Value] = [:]
+        for (key, value) in self {
+            if let newKey = transform(key) {
+                result[newKey] = value
+            }
+        }
+        return result
+    }
+}
+
 struct PainLoggerView: View {
+    @AppStorage("loggedPainData") private var loggedPainData: Data = Data()
+    @AppStorage("didTrainToday") private var didTrainToday: Bool = false
+    
+    @State private var loggedPain: [Date: [String: PainLevel]] = [:]
     @State private var selectedLevel: PainLevel = .none
     @State private var selectedTimeSlot: String = "Morning"
-    @State private var didTrainToday: Bool = false
     @State private var currentMonthOffset: Int = 0
-    @State private var loggedPain: [Date: [String: PainLevel]] = [:]
     @State private var exportedFileURL: URL?
     @State private var showShareSheet = false
     
+    init() {
+        if let decoded = try? JSONDecoder().decode([Date: [String: PainLevel.RawValue]].self, from: loggedPainData) {
+            loggedPain = decoded.mapValues { $0.compactMapValues { PainLevel(rawValue: $0) } }
+        }
+    }
+    
     let timeSlots = ["Morning", "Afternoon", "Night"]
     
+    func saveLoggedPain() {
+        let rawEncoded = loggedPain.mapValues { $0.mapValues { $0.rawValue } }
+        if let data = try? JSONEncoder().encode(rawEncoded) {
+            loggedPainData = data
+        }
+    }
+
+    func loadLoggedPain() -> [Date: [String: PainLevel]] {
+        guard let data = UserDefaults.standard.dictionary(forKey: "loggedPain") as? [String: [String: Int]] else { return [:] }
+        let formatter = ISO8601DateFormatter()
+        return data.compactMapKeys { formatter.date(from: $0) }
+                   .mapValues { $0.compactMapValues { PainLevel(rawValue: $0) } }
+    }
+
     func exportCSV() {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
@@ -136,7 +170,14 @@ struct PainLoggerView: View {
             let morning = dayLog["Morning"]?.rawValue ?? 0
             let afternoon = dayLog["Afternoon"]?.rawValue ?? 0
             let night = dayLog["Night"]?.rawValue ?? 0
-            let trained = Calendar.current.isDate(date, inSameDayAs: Date()) && didTrainToday ? 1 : 0
+
+            let trained: Int
+            if let storedLog = loggedPain[date] {
+                trained = (Calendar.current.isDate(date, inSameDayAs: Date()) && didTrainToday) ? 1 : 0
+            } else {
+                trained = 0
+            }
+
             csvString += "\(formatter.string(from: date)),\(morning),\(afternoon),\(night),\(trained)\n"
         }
 
@@ -214,6 +255,7 @@ struct PainLoggerView: View {
                         var dayLog = loggedPain[today, default: [:]]
                         dayLog[selectedTimeSlot] = selectedLevel
                         loggedPain[today] = dayLog
+                        saveLoggedPain()
                     }) {
                             Text("Log Entry")
                                 .frame(maxWidth: .infinity)
@@ -325,6 +367,9 @@ struct PainLoggerView: View {
                     }
                     .padding(.horizontal)
                 }
+            }
+            .onAppear {
+                loggedPain = loadLoggedPain()
             }
         }
         
